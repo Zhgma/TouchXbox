@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "packageName": "dev.touchxbox.pad",
+  "versionCode": 11,
+  "versionName": "0.5.6",
+  "minSdk": 26,
+  "apkFile": "TouchXbox-0.5.6-11-9ad706dc1d98.apk",
+  "size": 152830,
+  "sha256": "9ad706dc1d98ddd74e04968544a8755a882ae1723e4120d287b9207dbdac23de",
+  "signerSha256": "522eeb1ba794c6563ad1778217f40546ba1703905ac5c02857aa919196a4f28c",
+  "publishedAt": "2026-10-08T07:10:25Z",
+  "changelog": "TouchXbox 0.5.6\n\n- 设置中新增“检查更新”：从 Zhgma/TouchXbox 最新正式 GitHub Release 获取版本与更新说明。\n- 支持下载进度、取消、安装包完整性和签名校验，并引导系统安装权限与确认安装。\n- 更新源集中配置，后续版本可迁移到其他 GitHub 仓库或 HTTPS 静态站点。\n- 保留模板、四种输入协议、键盘与体感功能，以及自动或固定的图标和应用名称。\n\n首次安装此版之后可在应用内检查未来更新。虚拟输入仍需 Shizuku 或 ADB 激活。\n"
+}

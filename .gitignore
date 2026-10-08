@@ -64,3 +64,7 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Only this reviewed, pre-signed release package is published by the tag workflow.
+!/release/*.apk
+__pycache__/

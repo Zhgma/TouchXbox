@@ -25,16 +25,18 @@
 .\run-ota-tests.ps1 -JavaHome 'C:\path\to\jdk-17'
 .\prepare-ota.ps1 -ApkPath '.\TouchXbox-0.5.6.apk' `
   -JavaHome 'C:\path\to\jdk-17' -BuildTools 'C:\path\to\build-tools\34.0.0' `
-  -ChangelogFile '.\release-notes.txt' -OutputDirectory '.\ota-release'
+  -ChangelogFile '.\release-notes.txt' -OutputDirectory '.\release'
 ```
 
 后续发布时，先下载上一版的 `latest.json`，增加 `-PreviousManifest '上一版-latest.json'`，生成器会检查新版本号递增、签名证书未改变。所有元数据都从实际签名 APK 中读取；输出名称包含版本与摘要，避免覆盖旧附件。
 
-4. 将经过检查的源代码提交并推送，创建对应版本的 Git tag。
-5. 先创建 **Draft Release**，附上生成的 APK 和 `latest.json`，再发布为正式且最新的 Release。可附上独立授权脚本，但不要上传密钥、缓存、设备日志或截图。
+4. 本地运行 `python scripts/publish-release.py --tag v0.5.6 --validate-only`，将源代码和 `release/` 中经过检查的 APK、`latest.json` 一起提交。`release/` 是唯一允许提交 APK 的目录；密钥仍保留在本机。
+5. 创建并推送对应版本的 Git tag，例如 `v0.5.6`。仓库的 `Publish APK and OTA metadata` 工作流会创建 Draft Release，上传 APK、`latest.json` 和独立授权 CMD，重新下载附件校验后，再发布为正式且最新的 Release。已有公开 Release 不会被覆盖；重复运行只验证已有附件是否一致。
 6. 从匿名最新版本链接重新下载 `latest.json` 和 APK，核对 SHA-256、大小、版本及签名。再在安装着上一版本的设备上验证“检查 → 下载 → 系统安装 → 保留模板”的完整流程。
 
 `prepare-ota.ps1` 只生成本地发布文件，不上传、不创建 Release。单个 APK 当前限制 95 MiB。
+
+发布流程使用 GitHub Actions 的仓库内临时令牌，只授予本仓库的 `contents: write`。SSH 部署密钥负责推送代码及 tag；APK 在本地完成签名，签名私钥不上传到仓库或 Actions。
 
 ## 更换更新站点
 

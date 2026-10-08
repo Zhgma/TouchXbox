@@ -9,6 +9,7 @@ import java.net.URI;
 final class OtaSource {
     static final String BASE_URL = "https://github.com/Zhgma/TouchXbox/releases/latest/download/";
     static final String MANIFEST_URL = BASE_URL + "latest.json";
+    static final String AUTHORIZE_URL = BASE_URL + "TouchXbox-authorize.cmd";
     static final String PAGE_URL = BASE_URL.replace("/releases/latest/download/", "/releases/latest");
 
     static boolean allows(URI source, URI target) {

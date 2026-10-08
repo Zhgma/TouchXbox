@@ -12,12 +12,16 @@ import java.io.FileDescriptor;
 public final class BridgeDaemon {
     public static final int PORT=37684;
     public static void main(String[] args) throws Exception {
+        run(args,PORT);
+    }
+    /** Alternate port permits isolated lifecycle tests without interrupting the real bridge. */
+    static void run(String[] args,int port) throws Exception {
         if(args.length!=2)throw new IllegalArgumentException("Expected app UID and private key path");
         int uid=Integer.parseInt(args[0]);if(uid<10000)throw new IllegalArgumentException("Invalid application UID");
         byte[] key=BridgeAuth.decode(new String(Files.readAllBytes(Paths.get(args[1])),"US-ASCII").trim());
         Files.delete(Paths.get(args[1]));
         try(ServerSocket server=new ServerSocket()){
-            server.setReuseAddress(true);server.bind(new InetSocketAddress("127.0.0.1",PORT),2);
+            server.setReuseAddress(true);server.bind(new InetSocketAddress("127.0.0.1",port),2);
             System.out.println("TouchXbox bridge ready; app uid="+uid+"; authenticated loopback");
             boolean running=true;
             while(running){

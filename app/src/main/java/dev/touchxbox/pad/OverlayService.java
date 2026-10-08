@@ -11,6 +11,7 @@ import android.widget.*;
 import java.util.*;
 
 public final class OverlayService extends Service {
+    static final String QUICK_LAUNCH="QUICK_LAUNCH",TEMPLATE_ID="templateId";
     public static volatile boolean active,collapsed;
     public static volatile String status="尚未启动";
     private final PadState state=new PadState();
@@ -19,7 +20,7 @@ public final class OverlayService extends Service {
     private WindowManager wm;private FoldRegion fold;private LayoutProfile profile;private LayoutViewport viewport;private Notification.Builder notification;
     private volatile boolean running;private volatile BridgeClient client;
     private volatile int generation,requestedProtocol;private volatile boolean requestedKeyboard;private volatile DeviceMotion motion;
-    private boolean receiverRegistered,orientationBlocked;private int width,height;
+    private boolean receiverRegistered,orientationBlocked,quickSession;private int width,height;
     private final BroadcastReceiver screenOff=new BroadcastReceiver(){public void onReceive(Context c,Intent i){stopSelf();}};
     @Override public void onCreate(){
         super.onCreate();wm=(WindowManager)getSystemService(WINDOW_SERVICE);collapsed=false;
@@ -27,9 +28,9 @@ public final class OverlayService extends Service {
         nm.createNotificationChannel(new NotificationChannel("pad","虚拟手柄",NotificationManager.IMPORTANCE_LOW));
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,OverlayService.class).setAction("STOP"),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         PendingIntent expand=PendingIntent.getService(this,2,new Intent(this,OverlayService.class).setAction("EXPAND"),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent open=PendingIntent.getActivity(this,0,LauncherShortcuts.openIntent(this),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         notification=new Notification.Builder(this,"pad").setSmallIcon(R.drawable.ic_pad).setContentTitle(LauncherIdentity.name(LauncherIdentity.current(this))+" 悬浮手柄")
-            .setContentText("点击管理布局 · 收起后点系统悬浮球恢复").setContentIntent(open).addAction(new Notification.Action.Builder(null,"展开",expand).build()).addAction(new Notification.Action.Builder(null,"停止",stop).build()).setOngoing(true);
+            .setContentText("点击打开软件 · 收起后点系统悬浮球恢复").setContentIntent(open).addAction(new Notification.Action.Builder(null,"打开软件",open).build()).addAction(new Notification.Action.Builder(null,"展开",expand).build()).addAction(new Notification.Action.Builder(null,"停止",stop).build()).setOngoing(true);
         startForeground(7,notification.build());
         if(Build.VERSION.SDK_INT>=33)registerReceiver(screenOff,new IntentFilter(Intent.ACTION_SCREEN_OFF),Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(screenOff,new IntentFilter(Intent.ACTION_SCREEN_OFF));receiverRegistered=true;
@@ -38,31 +39,53 @@ public final class OverlayService extends Service {
         String action=intent==null?null:intent.getAction();
         if("STOP".equals(action)){stopSelf();return START_NOT_STICKY;}
         if("APPEARANCE".equals(action)){if(running)updateNotification();else stopSelf();return START_NOT_STICKY;}
+        if(QUICK_LAUNCH.equals(action)){
+            quickSession=true;LayoutStore store=new LayoutStore(this);String target=intent.getStringExtra(TEMPLATE_ID);
+            if(target==null||!target.equals(store.quickLaunchId())||store.find(target)==null){fail("快捷启动模板已变更，请重新点击桌面图标。",false);return START_NOT_STICKY;}
+            if(!store.select(target)){fail("模板读取失败，请重试。",false);return START_NOT_STICKY;}
+            if(running){
+                // Repeated desktop taps must not reset held keys or FPV throttle.
+                if(profile==null||!profile.id.equals(target))reload();
+                if(collapsed)setCollapsed(false);return START_NOT_STICKY;
+            }
+        }
         if(running){
             if("HIDE".equals(action)){setCollapsed(true);BubbleActivity.dismiss(this);}
-            else if("RELOAD".equals(action))reload();
+            else if("RELOAD".equals(action)){quickSession=false;reload();}
             else if("FOLD".equals(action))collapseToBubble();
             else setCollapsed(false);
             return START_NOT_STICKY;
         }
         if("HIDE".equals(action)||"RELOAD".equals(action)){stopSelf();return START_NOT_STICKY;}
-        if(!Settings.canDrawOverlays(this)){status="需要悬浮窗权限";stopSelf();return START_NOT_STICKY;}
-        profile=new LayoutStore(this).active();if(profile==null){stopSelf();return START_NOT_STICKY;}requestedProtocol=profile.protocol;state.configure(requestedProtocol);requestedKeyboard=!profile.keyboard.isEmpty();running=true;configureMotion();status="正在创建系统手柄…";
+        if(!Settings.canDrawOverlays(this)){fail("需要悬浮窗权限",false);return START_NOT_STICKY;}
+        profile=new LayoutStore(this).active();if(profile==null){stopSelf();return START_NOT_STICKY;}requestedProtocol=profile.protocol;state.configure(requestedProtocol,profile.fpvMode);requestedKeyboard=!profile.keyboard.isEmpty();running=true;configureMotion();status="正在创建系统手柄…";
         new Thread(()->{
+            int retries=0,retryGeneration=generation;
             while(running){int turn=generation,protocol=requestedProtocol;boolean keys=requestedKeyboard,connected=false;BridgeClient c=new BridgeClient(this);client=c;
+                if(retryGeneration!=turn){retries=0;retryGeneration=turn;}
                 try{
                     c.start(protocol,keys);MotionTelemetry.begin();connected=true;if(!running||turn!=generation)continue;active=true;status=ControllerProtocol.NAMES[protocol]+" 已连接";
-                    main.post(()->{if(running&&turn==generation){try{remove();show();verifyDevice(turn,protocol,0);}catch(Exception e){status="悬浮窗失败: "+e.getMessage();stopSelf();}}});
-                    while(running&&turn==generation){byte[] frame=state.nextFrame(protocol==0||protocol==3?100:15),pad=Arrays.copyOf(frame,15);DeviceMotion sensor=motion;short[][] samples=sensor==null?null:sensor.samples();byte[] report=protocol==1?SwitchProCodec.report(pad,samples,SystemClock.uptimeMillis()):protocol==2?Ds4Codec.report(pad,samples==null?null:samples[2],SystemClock.elapsedRealtimeNanos()):protocol==3?FpvCodec.report(pad):pad;byte[] packet=Arrays.copyOf(report,report.length+32);System.arraycopy(frame,15,packet,report.length,32);c.send(packet);MotionTelemetry.acknowledged(protocol,report);}
-                }catch(Exception e){if(running&&turn==generation){android.util.Log.e("TouchXboxSvc","Transport stopped",e);status=(connected?"连接中断: ":"启动失败: ")+e.getMessage();main.post(()->{Toast.makeText(this,status,Toast.LENGTH_LONG).show();stopSelf();});break;}}
+                    long connectedAt=SystemClock.elapsedRealtime();
+                    main.post(()->{if(running&&turn==generation&&client==c&&active){try{remove();show();verifyDevice(turn,protocol,0,c);}catch(Exception e){fail("悬浮窗失败: "+e.getMessage(),false);}}});
+                    while(running&&turn==generation){byte[] frame=state.nextFrame(protocol==0||protocol==3?100:15),pad=Arrays.copyOf(frame,15);DeviceMotion sensor=motion;short[][] samples=sensor==null?null:sensor.samples();byte[] report=protocol==1?SwitchProCodec.report(pad,samples,SystemClock.uptimeMillis()):protocol==2?Ds4Codec.report(pad,samples==null?null:samples[2],SystemClock.elapsedRealtimeNanos()):protocol==3?FpvCodec.report(pad):pad;byte[] packet=Arrays.copyOf(report,report.length+32);System.arraycopy(frame,15,packet,report.length,32);c.send(packet);MotionTelemetry.acknowledged(protocol,report);if(SystemClock.elapsedRealtime()-connectedAt>=3000)retries=0;}
+                }catch(Exception e){if(running&&turn==generation){
+                    if(!ShizukuInput.selected(this)&&BridgeRetry.allowed(e,retries)){
+                        retries++;active=false;state.reset();c.close();status="连接暂时中断，正在自动重连…";
+                        main.post(()->{if(running&&turn==generation)remove();});
+                        try{Thread.sleep(300L*retries);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();main.post(()->fail("重连已取消",false));break;}
+                        continue;
+                    }
+                    android.util.Log.e("TouchXboxSvc","Transport stopped",e);String error=(connected?"连接中断: ":"启动失败: ")+e.getMessage();main.post(()->{if(running&&turn==generation)fail(error,true);});break;
+                }}
                 finally{c.close();active=false;}
             }
         },"TouchXbox transport").start();return START_NOT_STICKY;
     }
-    private void reload(){state.reset();remove();LayoutProfile next=new LayoutStore(this).active();if(next==null){stopSelf();return;}boolean reconnect=next.protocol!=requestedProtocol||!next.keyboard.isEmpty()!=requestedKeyboard;profile=next;state.configure(next.protocol);if(reconnect){requestedProtocol=next.protocol;requestedKeyboard=!next.keyboard.isEmpty();generation++;active=false;BridgeClient c=client;if(c!=null)c.close();configureMotion();}else show();}
+    private void fail(String reason,boolean authorize){status=reason;running=false;active=false;BridgeClient c=client;if(c!=null)c.close();Toast.makeText(this,reason,Toast.LENGTH_LONG).show();stopSelf();if(quickSession){quickSession=false;try{LauncherActivity.openMain(this,reason,authorize);}catch(RuntimeException e){android.util.Log.e("TouchXboxSvc","Could not show launch error",e);}}}
+    private void reload(){state.reset();remove();LayoutProfile next=new LayoutStore(this).active();if(next==null){stopSelf();return;}boolean reconnect=next.protocol!=requestedProtocol||!next.keyboard.isEmpty()!=requestedKeyboard;profile=next;state.configure(next.protocol,next.fpvMode);if(reconnect){requestedProtocol=next.protocol;requestedKeyboard=!next.keyboard.isEmpty();generation++;active=false;BridgeClient c=client;if(c!=null)c.close();configureMotion();}else show();}
     private void configureMotion(){DeviceMotion old=motion;motion=null;if(old!=null)old.close();Point size=ScreenSpace.size(this);orientationBlocked=profile.landscapeOnly&&size.x<=size.y;if(requestedProtocol==1||requestedProtocol==2){DeviceMotion sensor=new DeviceMotion(this);sensor.setEnabled(!collapsed&&!orientationBlocked);motion=sensor;}}
     private void updateNotification(){notification.setContentTitle(LauncherIdentity.name(LauncherIdentity.current(this))+" 悬浮手柄");((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(7,notification.build());}
-    private void verifyDevice(int turn,int protocol,int attempts){if(!running||generation!=turn)return;boolean found=false;for(int id:InputDevice.getDeviceIds()){InputDevice d=InputDevice.getDevice(id);if(d!=null&&ControllerProtocol.matches(protocol,d.getVendorId(),d.getProductId())){found=true;break;}}if(found){LauncherIdentity.activate(this,protocol);updateNotification();}else{if(attempts<60)main.postDelayed(()->verifyDevice(turn,protocol,attempts+1),150);else{status="系统驱动未建立此协议的输入设备";Toast.makeText(this,status,1).show();stopSelf();}}}
+    private void verifyDevice(int turn,int protocol,int attempts,BridgeClient owner){if(!running||generation!=turn||client!=owner||!active)return;boolean found=false;for(int id:InputDevice.getDeviceIds()){InputDevice d=InputDevice.getDevice(id);if(d!=null&&ControllerProtocol.matches(protocol,d.getVendorId(),d.getProductId())){found=true;break;}}if(found){LauncherIdentity.activate(this,protocol);updateNotification();}else{if(attempts<60)main.postDelayed(()->verifyDevice(turn,protocol,attempts+1,owner),150);else fail("系统驱动未建立此协议的输入设备",false);}}
     private WindowManager.LayoutParams params(int w,int h,int x,int y,String title){
         WindowManager.LayoutParams p=new WindowManager.LayoutParams(w,h,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_SPLIT_TOUCH,

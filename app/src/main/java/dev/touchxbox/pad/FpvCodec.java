@@ -1,6 +1,6 @@
 package dev.touchxbox.pad;
 
-/** Generic unsigned 16-bit Mode 2 radio. CH3 uses the native unipolar
+/** Generic unsigned 16-bit radio with stable channels in every physical stick mode. CH3 uses the native unipolar
  * throttle usage, so Android starts at zero without synthesizing a startup move. */
 public final class FpvCodec {
     public static final String NAME="TouchXbox FPV USB Radio";

@@ -60,6 +60,30 @@ function Device-Adb([string[]]$Arguments, [switch]$AllowFailure) {
     return Invoke-Adb -Arguments (@('-s', $script:Serial) + $Arguments) -AllowFailure:$AllowFailure
 }
 
+function New-BridgeRuntime([string]$PackagePath, [string]$AppUid) {
+    if ($PackagePath -notmatch '^/data/app/[A-Za-z0-9_./=+~-]+/base\.apk$' -or $AppUid -notmatch '^\d+$' -or [long]$AppUid -lt 10000) { throw '输入服务运行文件参数无效。' }
+    $sum = (Device-Adb -Arguments @('shell', 'sha256sum', $PackagePath)).Text.Trim()
+    if ($sum -notmatch '^([0-9a-fA-F]{64})\s') { throw '无法校验输入服务运行文件。' }
+    $digest = $Matches[1].ToLowerInvariant()
+    $directory = '/data/local/tmp/touchxbox-runtime-' + $AppUid
+    $runtime = $directory + '/bridge-' + $digest + '.apk'
+    # Keep ART's mapped dex/oat independent of PackageManager's replaceable APK.
+    # Content-addressed files are never overwritten while an older process maps them.
+    $null = Device-Adb -Arguments @('shell', "umask 077; test ! -L '$directory' && mkdir -p '$directory' && chmod 700 '$directory' && test ! -L '$runtime'")
+    $existing = Device-Adb -Arguments @('shell', 'sha256sum', $runtime) -AllowFailure
+    if ($existing.Code -ne 0 -or !$existing.Text.StartsWith($digest + ' ')) {
+        $stage = $directory + '/stage-' + [Guid]::NewGuid().ToString('N') + '.apk'
+        try {
+            $null = Device-Adb -Arguments @('shell', "cp '$PackagePath' '$stage' && chmod 400 '$stage'")
+            $copied = (Device-Adb -Arguments @('shell', 'sha256sum', $stage)).Text.Trim()
+            if (!$copied.StartsWith($digest + ' ')) { throw '输入服务运行文件校验失败。' }
+            $null = Device-Adb -Arguments @('shell', 'mv', '-f', $stage, $runtime)
+        } finally { $null = Device-Adb -Arguments @('shell', 'rm', '-f', $stage) -AllowFailure }
+    }
+    $null = Device-Adb -Arguments @('shell', 'chmod', '400', $runtime)
+    return $runtime
+}
+
 function Test-AdbExecutable([string]$Path) {
     if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
     $script:AdbPath = [IO.Path]::GetFullPath($Path)
@@ -255,6 +279,7 @@ function Start-Authorization {
     $packagePath = $baseApk.Groups[1].Value
     $access = Device-Adb -Arguments @('shell', 'test -r /dev/uhid && test -w /dev/uhid') -AllowFailure
     if ($access.Code -ne 0) { throw '此设备未向 ADB shell 开放 /dev/uhid，当前授权方式不可用。' }
+    $runtimePath = New-BridgeRuntime $packagePath $appUid
 
     Write-Host '正在激活已安装的 TouchXbox……'
     $null = Device-Adb -Arguments @('shell', 'am', 'force-stop', '--user', $currentUser, 'dev.touchxbox.pad')
@@ -272,8 +297,8 @@ function Start-Authorization {
         $opened = Device-Adb -Arguments @('shell', 'am', 'start', '--user', $currentUser, '-n', 'dev.touchxbox.pad/.MainActivity')
         if ($opened.Text -match '(?m)^Error') { throw 'TouchXbox 无法打开，请先解锁设备再重试。' }
         $provision = Device-Adb -Arguments @('shell', 'am', 'broadcast', '--user', $currentUser, '-a', 'dev.touchxbox.pad.ACTIVATE', '--include-stopped-packages', '-n', 'dev.touchxbox.pad/.ActivationReceiver', '--es', 'token', $script:Secret)
-        if ($provision.Text -notmatch 'Broadcast completed:\s*result=1(?:\s|,|$)') { throw '应用未接受授权，请安装与此工具兼容的 TouchXbox 版本（当前为 0.5.3）。' }
-        $launch = "CLASSPATH='$packagePath' nohup app_process / --nice-name=touchxbox-bridge dev.touchxbox.pad.BridgeDaemon $appUid '$keyPath' >/data/local/tmp/touchxbox-bridge.log 2>&1 </dev/null &"
+        if ($provision.Text -notmatch 'Broadcast completed:\s*result=1(?:\s|,|$)') { throw '应用未接受授权，请从同一发布页更新 TouchXbox APK 后重试。' }
+        $launch = "CLASSPATH='$runtimePath' nohup app_process / --nice-name=touchxbox-bridge dev.touchxbox.pad.BridgeDaemon $appUid '$keyPath' >/data/local/tmp/touchxbox-bridge.log 2>&1 </dev/null &"
         $null = Device-Adb -Arguments @('shell', $launch)
         $ready = $false
         for ($attempt = 0; $attempt -lt 15; $attempt++) {
@@ -299,7 +324,8 @@ function Start-Authorization {
     } else {
         Write-Host '还需手动开启悬浮窗：TouchXbox → 齿轮 → 悬浮窗权限 → 允许。' -ForegroundColor Yellow
     }
-    Write-Host '现在可以断开 USB。设备重启或输入服务退出后，重新运行此脚本。'
+    Write-Host '现在可以断开 USB。后台已使用独立运行文件，正常覆盖更新可复用现有授权。'
+    Write-Host '设备重启、清除应用数据或输入服务退出后，仍需重新运行此脚本。'
 }
 
 try {

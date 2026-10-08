@@ -61,6 +61,17 @@ def gh(*args, check=True):
     return subprocess.run(["gh", *args], text=True, encoding="utf-8", capture_output=True, check=check)
 
 
+def release_assets(apk, manifest):
+    script = ROOT / "TouchXbox-authorize.cmd"
+    require(not script.is_symlink() and script.is_file(), "Missing standalone authorization CMD")
+    content = script.read_bytes()
+    require(0 < len(content) <= 1024 * 1024, "Invalid authorization CMD size")
+    require(content.startswith(b"@echo off\r\n"), "Authorization CMD must use Windows CRLF without a BOM")
+    require(b"#<TOUCHXBOX_POWERSHELL>" in content and b"powershell.exe" in content,
+            "Incomplete standalone authorization CMD")
+    return [apk, manifest, script]
+
+
 def verify_uploaded(tag, files):
     with tempfile.TemporaryDirectory(prefix="touchxbox-release-") as directory:
         for file in files:
@@ -75,12 +86,12 @@ def main():
     parser.add_argument("--validate-only", action="store_true")
     options = parser.parse_args()
     metadata, apk, manifest = validate(options.package_dir, options.tag)
-    print(f"Validated {options.tag}: {apk.name} ({metadata['size']} bytes)", flush=True)
+    files = release_assets(apk, manifest)
+    print(f"Validated {options.tag}: {apk.name} ({metadata['size']} bytes) and TouchXbox-authorize.cmd", flush=True)
     if options.validate_only:
         return
     require(os.environ.get("GH_REPO") == "Zhgma/TouchXbox", "Unexpected publishing repository")
     require(bool(os.environ.get("GH_TOKEN")), "Missing GitHub Actions token")
-    files = [apk, manifest, ROOT / "TouchXbox-authorize.cmd"]
     existing = gh("release", "view", options.tag, "--json", "isDraft,isPrerelease", check=False)
     if existing.returncode == 0:
         release = json.loads(existing.stdout)

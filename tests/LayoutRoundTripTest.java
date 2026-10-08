@@ -32,6 +32,10 @@ public final class LayoutRoundTripTest {
         check(q.landscape.shoulderLayout==2&&q.portrait.shoulderLayout==1&&q.landscape.shoulderX==p.landscape.shoulderX&&q.landscape.shoulderY==p.landscape.shoulderY,"Independent orientation shoulder links and anchors survive export");
         p.holdOutside.clear();q=TemplateCode.decode(TemplateCode.encode(p));check(q.holdOutside.isEmpty(),"Explicit empty array does not re-enable defaults");
         boolean badHold=false;try{LayoutStore.decode("{\"holdOutside\":[\"L\"]}");}catch(IllegalArgumentException e){badHold=true;}check(badHold,"Stick cannot import momentary-button retention");
+        check(old.fpvMode==FpvMode.AMERICAN,"Legacy templates keep current American mode");
+        p.protocol=ControllerProtocol.FPV;
+        for(int mode:new int[]{FpvMode.AMERICAN,FpvMode.JAPANESE,FpvMode.CHINESE}){p.fpvMode=mode;q=TemplateCode.decode(TemplateCode.encode(p));check(q.fpvMode==mode,"FPV mode survives copy/import");check(q.throttle(LayoutProfile.spec(mode==FpvMode.AMERICAN?"L":"R")),"Imported mode preserves throttle side");}
+        check(LayoutStore.decode("{\"fpvMode\":99}").fpvMode==FpvMode.AMERICAN,"Invalid FPV mode uses safe default");
         System.out.println("PASS: template migration and portable round trip; protocols and FPV auxiliary channels, keyboard mappings/shared sizes, names, optional highlight, orientation gating, hidden controls, malformed-input rejection");
     }
 }

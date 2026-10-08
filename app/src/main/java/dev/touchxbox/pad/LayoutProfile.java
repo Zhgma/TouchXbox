@@ -97,6 +97,7 @@ public final class LayoutProfile {
     public boolean swapAB,swapXY;
     public int abxyStyle=1,dpadStyle;
     public int protocol=ControllerProtocol.XBOX;
+    public int fpvMode=FpvMode.AMERICAN;
     public boolean landscapeOnly;
     public final List<Spec> keyboard=new ArrayList<>();
     public final LinkedHashMap<String,String[]> labels=new LinkedHashMap<>();
@@ -120,9 +121,9 @@ public final class LayoutProfile {
     public static String buttonName(int code){return code==PadState.A?"A":code==PadState.B?"B":code==PadState.X?"X":code==PadState.Y?"Y":"";}
     public String label(Spec s){return label(s,false);}
     public String displayKey(Spec s){return s.kind==0&&s.name.matches("[ABXY]")?buttonName(mapButton(s.code)):s.name;}
-    public String label(Spec s,boolean lit){String key=displayKey(s);String[] pair=labels.get(key);return pair==null?(s.kind==5?KeyboardKeys.name(s.code):ControllerProtocol.label(protocol,key)):pair[lit?1:0];}
+    public String label(Spec s,boolean lit){String key=displayKey(s);String[] pair=labels.get(key);return pair==null?(s.kind==5?KeyboardKeys.name(s.code):squareStick(s)?FpvMode.label(fpvMode,s.code==1):ControllerProtocol.label(protocol,key)):pair[lit?1:0];}
     public boolean squareStick(Spec s){return protocol==ControllerProtocol.FPV&&s.kind==1;}
-    public boolean throttle(Spec s){return squareStick(s)&&s.code==0;}
+    public boolean throttle(Spec s){return squareStick(s)&&(s.code==1)==FpvMode.throttleRight(fpvMode);}
     public boolean inFoldRegion(float x,float y,float w,float h){return page(w>h).fold(w,h).contains(x,y);}
     public void activateLabel(String key){if(toggleLabels.contains(key)){if(!highlighted.add(key))highlighted.remove(key);}}
     public String directionLabel(int direction,boolean down){String[] pair=labels.get("D_"+direction);return pair==null?new String[]{"↑","→","↓","←"}[direction]:pair[down?1:0];}

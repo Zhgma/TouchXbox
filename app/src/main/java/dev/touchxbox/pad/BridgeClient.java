@@ -9,12 +9,15 @@ import java.io.IOException;
 public final class BridgeClient implements AutoCloseable {
     private final Socket socket=new Socket();private final Context context;
     public BridgeClient(Context c){context=c;}
+    static boolean hasActivationKey(Context c){return c.getSharedPreferences("bridge",0).getString("token","").matches("[0-9a-f]{64}");}
     private DataInputStream in;private DataOutputStream out;private ShizukuInput.Session local;
     public void connect() throws Exception {
         if(ShizukuInput.selected(context)){local=ShizukuInput.connect(context);return;}
         String token=context.getSharedPreferences("bridge",0).getString("token","");
-        if(token.length()!=64)throw new IOException("请先通过 activate.ps1 激活");
-        socket.connect(new InetSocketAddress("127.0.0.1",BridgeDaemon.PORT),1500);socket.setSoTimeout(3500);socket.setTcpNoDelay(true);
+        if(!hasActivationKey(context))throw new IOException("请在设置中打开“电脑 USB 授权”，下载并运行 TouchXbox-authorize.cmd");
+        try{socket.connect(new InetSocketAddress("127.0.0.1",BridgeDaemon.PORT),1500);}
+        catch(IOException e){throw new IOException("输入后台暂时无法连接，已保存的授权仍保留。可重试启动；若后台已退出，请在电脑运行 TouchXbox-authorize.cmd",e);}
+        socket.setSoTimeout(3500);socket.setTcpNoDelay(true);
         in=new DataInputStream(socket.getInputStream());out=new DataOutputStream(socket.getOutputStream());
         BridgeAuth.client(in,out,BridgeAuth.decode(token));
     }

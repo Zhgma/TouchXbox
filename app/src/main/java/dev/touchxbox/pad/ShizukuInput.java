@@ -10,6 +10,8 @@ import rikka.shizuku.Shizuku;
 
 /** Permission checks and Binder transport; no shell commands or copied activation keys. */
 final class ShizukuInput {
+    // Keep the backend and saved choices available while its UI entry points are hidden.
+    static final boolean SHOW_ENTRY=false;
     static final String PACKAGE="moe.shizuku.privileged.api";
     static final int PERMISSION_REQUEST=917;
     private static final Handler main=new Handler(Looper.getMainLooper());
@@ -20,7 +22,7 @@ final class ShizukuInput {
         public void onServiceConnected(ComponentName name,IBinder service){synchronized(lock){remote=service;if(connecting!=null)connecting.countDown();connecting=null;}}
         public void onServiceDisconnected(ComponentName name){synchronized(lock){remote=null;if(connecting!=null)connecting.countDown();connecting=null;}}
     };
-    static boolean selected(Context c){return c.getSharedPreferences("connection",0).getBoolean("shizuku",true);}
+    static boolean selected(Context c){return c.getSharedPreferences("connection",0).getBoolean("shizuku",false);}
     static boolean installed(Context c){try{c.getPackageManager().getPackageInfo(PACKAGE,0);return true;}catch(PackageManager.NameNotFoundException e){return false;}}
     static boolean running(){try{return Shizuku.pingBinder()&&Shizuku.getVersion()>=13;}catch(Exception e){return false;}}
     static boolean authorized(){try{return running()&&Shizuku.checkSelfPermission()==PackageManager.PERMISSION_GRANTED;}catch(Exception e){return false;}}

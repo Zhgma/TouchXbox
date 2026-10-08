@@ -10,6 +10,7 @@ on:
       - 'release/**'
       - '.github/workflows/release.yml'
       - 'scripts/publish-release.py'
+      - 'TouchXbox-authorize.cmd'
   workflow_dispatch:
 
 permissions:

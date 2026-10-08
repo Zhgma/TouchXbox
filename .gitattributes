@@ -1,0 +1,5 @@
+*.apk -text
+*.cmd text eol=crlf
+*.json text eol=lf
+*.yml text eol=lf
+*.py text eol=lf

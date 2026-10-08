@@ -1,0 +1,29 @@
+# Local build products and test output
+build/
+*-build/
+ota-release/
+evidence/
+*.apk
+*.apk.idsig
+*.class
+*.dex
+*.log
+
+# Signing keys and local credentials must never be published
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.key
+local.properties
+build-local.ps1
+.env
+.env.*
+activation*.json
+touchxbox-activation*
+
+# Editors and OS metadata
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store

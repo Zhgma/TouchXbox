@@ -1,0 +1,6 @@
+<resources>
+    <color name="launcher_xbox">#107C10</color>
+    <color name="launcher_ns">#E60012</color>
+    <color name="launcher_ps">#144AA5</color>
+    <color name="launcher_fpv">#182C38</color>
+</resources>

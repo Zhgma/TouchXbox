@@ -1,0 +1,4 @@
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/launcher_xbox" />
+    <foreground android:drawable="@drawable/ic_xbox_foreground" />
+</adaptive-icon>

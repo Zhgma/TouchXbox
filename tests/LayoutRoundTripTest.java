@@ -36,6 +36,13 @@ public final class LayoutRoundTripTest {
         p.protocol=ControllerProtocol.FPV;
         for(int mode:new int[]{FpvMode.AMERICAN,FpvMode.JAPANESE,FpvMode.CHINESE}){p.fpvMode=mode;q=TemplateCode.decode(TemplateCode.encode(p));check(q.fpvMode==mode,"FPV mode survives copy/import");check(q.throttle(LayoutProfile.spec(mode==FpvMode.AMERICAN?"L":"R")),"Imported mode preserves throttle side");}
         check(LayoutStore.decode("{\"fpvMode\":99}").fpvMode==FpvMode.AMERICAN,"Invalid FPV mode uses safe default");
+        check(!old.fpvXbox&&LayoutStore.decode("{\"protocol\":3}").outputProtocol()==ControllerProtocol.FPV,"Legacy FPV keeps native output");
+        p.fpvXbox=true;
+        for(int mode:new int[]{1,2,3}){p.fpvMode=mode;q=TemplateCode.decode(TemplateCode.encode(p));check(q.protocol==ControllerProtocol.FPV&&q.fpvXbox&&q.fpvMode==mode&&q.outputProtocol()==ControllerProtocol.XBOX,"FPV layout, mode and Xbox output survive portable copy");check(q.landscape.items.get("CH7").x==p.landscape.items.get("CH7").x&&q.hiddenButtons.equals(p.hiddenButtons),"Output switch preserves layout geometry and hidden controls");}
+        p.fpvXboxAux.put(4,new int[]{PadState.A+1,0,FpvAuxMapping.KEYBOARD+44});p.fpvXboxAux.put(7,new int[]{FpvAuxMapping.LEFT,FpvAuxMapping.UP,FpvAuxMapping.RT});
+        q=TemplateCode.decode(TemplateCode.encode(p));check(q.fpvXboxAux.size()==2&&java.util.Arrays.equals(q.fpvXboxAux.get(4),p.fpvXboxAux.get(4))&&q.needsKeyboard(),"Custom CH gamepad and keyboard mappings round trip");q.fpvXboxAux.get(4)[2]=0;check(p.fpvXboxAux.get(4)[2]==FpvAuxMapping.KEYBOARD+44,"Imported channel arrays isolated");
+        for(String invalid:new String[]{"{\"CH4\":[0,0,0]}","{\"CH5\":[0,0]}","{\"CH5\":[0,0,999]}","{\"CH5\":[0,0,1.5]}","{\"CH5\":[0,0,\"A\"]}"}){boolean rejected=false;try{LayoutStore.decode("{\"fpvXboxAux\":"+invalid+"}");}catch(IllegalArgumentException e){rejected=true;}check(rejected,"Invalid auxiliary binding rejected");}
+        p.fpvXbox=false;q=LayoutStore.decode(LayoutStore.encode(p));check(!q.fpvXbox&&q.outputProtocol()==ControllerProtocol.FPV,"Native output restored and saved");
         System.out.println("PASS: template migration and portable round trip; protocols and FPV auxiliary channels, keyboard mappings/shared sizes, names, optional highlight, orientation gating, hidden controls, malformed-input rejection");
     }
 }

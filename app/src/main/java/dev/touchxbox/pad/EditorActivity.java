@@ -40,7 +40,7 @@ public final class EditorActivity extends Activity {
     private LinearLayout row(LinearLayout parent,int height){LinearLayout r=new LinearLayout(this);r.setGravity(Gravity.CENTER_VERTICAL);parent.addView(r,new LinearLayout.LayoutParams(-1,dp(height)));return r;}
     private Button button(LinearLayout p,String text,Runnable action,int width){Button b=new Button(this);b.setText(text);b.setTextColor(0xFFB9FBD6);b.setTextSize(13);b.setAllCaps(false);b.setPadding(0,0,0,0);p.addView(b,new LinearLayout.LayoutParams(dp(width),dp(44)));b.setOnClickListener(v->{hideKeyboard();action.run();});return b;}
     private TextView label(String text,int sp,int color){TextView t=new TextView(this);t.setText(text);t.setTextSize(sp);t.setTextColor(color);t.setGravity(Gravity.CENTER_VERTICAL);t.setPadding(0,dp(4),0,dp(4));return t;}
-    private void updateModes(){orientation.setText(wide?"横屏布局 ⇄":"竖屏布局 ⇄");protocol.setText(ControllerProtocol.NAMES[draft.protocol]+" ▾");preview.orientation(wide);preview.invalidate();}
+    private void updateModes(){orientation.setText(wide?"横屏布局 ⇄":"竖屏布局 ⇄");protocol.setText((draft.protocol==ControllerProtocol.FPV&&draft.fpvXbox?"FPV · Xbox 输出":ControllerProtocol.NAMES[draft.protocol])+" ▾");preview.orientation(wide);preview.invalidate();}
     private void chooseProtocol(){new AlertDialog.Builder(this).setTitle("手柄协议").setSingleChoiceItems(ControllerProtocol.NAMES,draft.protocol,(d,which)->{draft.protocol=which;if(!selected.equals("FOLD")&&!draft.available(LayoutProfile.spec(selected)))selected="FOLD";updateModes();d.dismiss();String info=which==0?"Xbox 360：按键、摇杆、模拟扳机。此协议不包含体感。":which==1?"NS Pro：按键、摇杆和体感报告；ZL / ZR 为数字按键。系统能否读取体感取决于 Nintendo 驱动版本。":which==2?"PS / DualShock 4：按键、摇杆、模拟扳机与体感。": "FPV USB 遥控器：默认美国手，点选任一摇杆可切换日本手或中国手。CH5～CH8 为四个可选辅助通道，点按切换 0% / 50% / 100%。油门所在摇杆初始在底部；松手左右回中、上下保持，再次触摸从上次油门位置继续拖动。";new AlertDialog.Builder(this).setTitle(ControllerProtocol.NAMES[which]).setMessage(info+((which==1||which==2)?"\n\n"+DeviceMotion.availability(this)+"\n缺失的传感器不会生成测量值。":"")).setPositiveButton("确定",null).show();select(selected);}).setNegativeButton("取消",null).show();}
     private void addKeyboard(){
         LinearLayout body=new LinearLayout(this);body.setOrientation(1);body.setPadding(dp(20),0,dp(20),dp(12));TextView summary=label("手柄点亮保留，取消高亮删除 · 键盘多选新增",13,0xFFB4C8BD);body.addView(summary);
@@ -59,7 +59,35 @@ public final class EditorActivity extends Activity {
         same.setOnCheckedChangeListener((v,on)->{down.setEnabled(!on);if(on)down.setText(up.getText());});up.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int f){}public void onTextChanged(CharSequence s,int a,int b,int c){if(same.isChecked())down.setText(s);}public void afterTextChanged(Editable e){}});
         body.addView(label("高亮只改变显示，不会持续按住。实际输入："+fallback,12,0xFF9CB3A6));ScrollView scroller=new ScrollView(this);scroller.addView(body);new AlertDialog.Builder(this).setTitle("名称与高亮").setView(scroller).setNegativeButton("取消",null).setNeutralButton("恢复默认",(d,w)->{draft.labels.remove(key);draft.toggleLabels.remove(key);select(selected);}).setPositiveButton("应用",(d,w)->{draft.labels.put(key,new String[]{up.getText().toString(),same.isChecked()?up.getText().toString():down.getText().toString()});if(toggle.isChecked())draft.toggleLabels.add(key);else draft.toggleLabels.remove(key);select(selected);}).show();
     }
+    private AlertDialog editFpvAux(int channel){
+        LinearLayout body=new LinearLayout(this);body.setOrientation(1);body.setPadding(dp(20),0,dp(20),dp(8));
+        TextView summary=label("",13,0xFFB4C8BD);body.addView(summary);Button[] levels=new Button[3];
+        Runnable refresh=()->{int[] bindings=draft.fpvXboxAux.get(channel);summary.setText(bindings==null?"当前默认输出："+FpvAuxMapping.defaultName(channel)+"。选择任一档位的按键后，此通道改用自定义映射。":"自定义按键：进入档位时按住，切换档位时释放；启动、收起和中断时全部释放。未设置的档位不按键。");for(int i=0;i<3;i++)if(levels[i]!=null)levels[i].setText((i*50)+"% · "+(bindings==null?"默认输出":FpvAuxMapping.name(bindings[i])));};
+        for(int i=0;i<3;i++){final int level=i;levels[i]=button(body,"",()->chooseFpvBinding(channel,level,refresh),300);levels[i].setContentDescription("CH"+(channel+1)+" "+(i*50)+"% 映射");}
+        refresh.run();ScrollView scroll=new ScrollView(this);scroll.addView(body);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("CH"+(channel+1)+" 档位映射").setView(scroll).setNeutralButton("恢复默认输出",(d,w)->{draft.fpvXboxAux.remove(channel);select(selected);}).setPositiveButton("完成",(d,w)->select(selected)).create();dialog.show();return dialog;
+    }
+    private AlertDialog chooseFpvBinding(int channel,int level,Runnable refresh){
+        AlertDialog chooser=new AlertDialog.Builder(this).setTitle("CH"+(channel+1)+" · "+(level*50)+"% 输出").setItems(new String[]{"不按键（释放）","Xbox 按键","键盘按键"},(d,which)->{
+            if(which==0){setFpvBinding(channel,level,0);refresh.run();return;}
+            chooseFpvKey(channel,level,which==2,refresh);
+        }).setNegativeButton("取消",null).create();chooser.show();return chooser;
+    }
+    private AlertDialog chooseFpvKey(int channel,int level,boolean keyboard,Runnable refresh){
+        List<Integer> codes=new ArrayList<>(keyboard?KeyboardKeys.KEYS.keySet():FpvAuxMapping.BUTTONS.keySet());String[] names=new String[codes.size()];
+        for(int i=0;i<codes.size();i++)names[i]=keyboard?KeyboardKeys.name(codes.get(i)):FpvAuxMapping.BUTTONS.get(codes.get(i));
+        AlertDialog picker=new AlertDialog.Builder(this).setTitle(keyboard?"选择键盘按键":"选择 Xbox 按键").setItems(names,(pick,index)->{setFpvBinding(channel,level,codes.get(index)+(keyboard?FpvAuxMapping.KEYBOARD:0));refresh.run();}).setNegativeButton("取消",null).create();picker.show();return picker;
+    }
+    private void setFpvBinding(int channel,int level,int binding){
+        if(channel<4||channel>7||level<0||level>2||!FpvAuxMapping.valid(binding))throw new IllegalArgumentException("无效的辅助通道映射");
+        int[] levels=draft.fpvXboxAux.get(channel);if(levels==null){levels=new int[3];draft.fpvXboxAux.put(channel,levels);}levels[level]=binding;
+    }
     private void select(String key){selected=key;properties.removeAllViews();LayoutProfile.Page page=draft.page(wide);
+        if(draft.protocol==ControllerProtocol.FPV){
+            toggle("模拟 Xbox 协议",draft.fpvXbox,v->{draft.fpvXbox=v==1;updateModes();select(key);});
+            properties.addView(label(draft.fpvXbox?"用于 Moonlight 等串流。保留 FPV 布局、方形行程、操控习惯和油门保持。":"关闭时输出原生 FPV 遥控器；开启后输出 Xbox 手柄。",12,0xFFB4C8BD));
+            if(draft.fpvXbox)for(int ch=4;ch<8;ch++){final int channel=ch;button(properties,"CH"+(ch+1)+" · "+(draft.fpvXboxAux.containsKey(ch)?"自定义按键":FpvAuxMapping.defaultName(ch)),()->editFpvAux(channel),200);}
+        }
         detail=label(key.equals("FOLD")?"收起区域":key+" 控件",19,Color.WHITE);properties.addView(detail);
         if(key.equals("FOLD")){
             properties.addView(label("运行时不可见。点击区域内任意位置，收起到系统悬浮球。",12,0xFFB4C8BD));
@@ -93,7 +121,7 @@ public final class EditorActivity extends Activity {
             if(draft.throttle(s))properties.addView(label("油门启动时在底部。上下保持，左右回中；每次触摸从上次油门高度继续拖动。固定与浮动样式都适用。",12,0xFFB4C8BD));
             if(s.kind==1&&!draft.throttle(s))properties.addView(label(draft.floating(s)?"这一侧无按键的空白处均可起摇杆；触点就是中心。预览图形只表示尺寸。":"固定中心，拖动拨杆。",12,0xFFB4C8BD));
             if(draft.squareStick(s))properties.addView(label("正方形操作范围，两轴独立到达满值。"+(draft.throttle(s)?"":"松手后两轴都回中。"),12,0xFFB4C8BD));
-            if(s.kind==6)properties.addView(label("辅助通道：点按依次切换 0%、50%、100%，松手保留当前档位。初始和收起后位于 50% 中档。",12,0xFFB4C8BD));
+            if(s.kind==6)properties.addView(label("辅助通道：点按依次切换 0%、50%、100%，松手保留当前档位。初始和收起后位于 50% 中档。"+(draft.fpvXbox?(draft.fpvXboxAux.containsKey(s.code)?"\n当前使用自定义按键；启动、收起或中断后，按键全部释放。可在上方 CH 映射中修改。":"\n默认 Xbox 输出：CH5 / CH6 对应 LT / RT；CH7 对应左 / 松开 / 右，CH8 对应下 / 松开 / 上。可在上方改为按键或键盘。"):""),12,0xFFB4C8BD));
             if(s.kind==3)properties.addView(label(draft.triggerClick(s)?"按住即满值，松手归零；滑出行为由上方开关控制。":"向下滑动增加扳机力度，松手归零。",12,0xFFB4C8BD));
             if(LayoutProfile.isShoulder(s)){
                 styles("四肩键位置联动",new String[]{"关闭（独立移动）","左右对称 · 上下排列","左右对称 · 并列排列"},page.shoulderLayout,v->{page.setShoulderLayout(v,preview.targetW,preview.targetH);select(key);});

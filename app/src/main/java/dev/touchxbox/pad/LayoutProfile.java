@@ -98,6 +98,9 @@ public final class LayoutProfile {
     public int abxyStyle=1,dpadStyle;
     public int protocol=ControllerProtocol.XBOX;
     public int fpvMode=FpvMode.AMERICAN;
+    public boolean fpvXbox;
+    /** Missing channel retains default Xbox output; each custom channel has three bindings. */
+    public final LinkedHashMap<Integer,int[]> fpvXboxAux=new LinkedHashMap<>();
     public boolean landscapeOnly;
     public final List<Spec> keyboard=new ArrayList<>();
     public final LinkedHashMap<String,String[]> labels=new LinkedHashMap<>();
@@ -109,6 +112,9 @@ public final class LayoutProfile {
     public float opacity=.72f;
     public Page landscape=new Page(),portrait=new Page();
     public Page page(boolean wide){return wide?landscape:portrait;}
+    /** Layout/gesture protocol stays FPV when its reports use the Xbox transport. */
+    public int outputProtocol(){return protocol==ControllerProtocol.FPV&&fpvXbox?ControllerProtocol.XBOX:protocol;}
+    public boolean needsKeyboard(){if(!keyboard.isEmpty())return true;if(protocol==ControllerProtocol.FPV&&fpvXbox)for(int[] levels:fpvXboxAux.values())for(int binding:levels)if(FpvAuxMapping.keyboard(binding))return true;return false;}
     public boolean floating(Spec s){return visible(s)&&s.kind==1&&(s.code==0?leftFloating:rightFloating);}
     public boolean triggerClick(Spec s){return s.kind==3&&(s.code==0?leftTriggerClick:rightTriggerClick);}
     public static boolean canHoldOutside(Spec s){return s!=null&&(s.kind==0||s.kind==2||s.kind==3||s.kind==4||s.kind==5);}
